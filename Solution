@@ -1,0 +1,182 @@
+#Eben Udeh 11/4/22
+#Portland State University
+#Electrical and Computer Engineering
+#written for python 3.7+
+
+import autograd.numpy as np
+import math
+import sys
+import cmath
+import torch
+from torch.autograd.functional import jacobian
+from torch import tensor
+
+#Initialize Y_bus admittance matrix
+Y_bus=np.array([[3-9j,-2+6j,-1+3j,0],[-2+6j, 3.666-11j, -0.666+2j, -1+3j],[-1+3j,-0.666+2j,\
+ 3.666-11j,-2+6j],[0,-1+3j,-2+6j,3-9j]])
+
+#vangX and vX represent voltage angle and magnitude respectively in the differentiable cartesian equations
+#Y_mag_i and Ythetha_i represents magnitude and angle of the ith element of the admittance matrix
+
+def f(vang2, vang3, vang4, v2, v3, v4): #defines differentiable cartesian function
+    
+    dict_Ymag={}
+    dict_Ytheta={}
+    Ymag_i = 1
+    Ytheta_i = 1
+    #assign y_bus magnitude variables
+    for i in Y_bus:
+        Ymag_j=1
+        for j in i:
+            key = str("y"+str(Ymag_i)+str(Ymag_j))
+            dict_Ymag[key] = abs(j)
+            Ymag_j=Ymag_j+1
+        Ymag_i=Ymag_i+1
+    #assign y_bus angular variables in radians
+    for i in Y_bus:
+        Ytheta_j=1
+        for j in i:
+            key = str("Theta"+str(Ytheta_i)+str(Ytheta_j))
+            dict_Ytheta[key] = np.angle(j)
+            Ytheta_j=Ytheta_j+1
+        Ytheta_i=Ytheta_i+1
+        
+    #return P and Q cartesian equations 
+    v1=1
+    vang1=0
+
+    return(v2*((dict_Ymag['y21']*v1*torch.cos(vang2-vang1-dict_Ytheta['Theta21']))+\
+    (dict_Ymag['y22']*v2*torch.cos(vang2-vang2-dict_Ytheta['Theta22']))+\
+    (dict_Ymag['y23']*v3*torch.cos(vang2-vang3-dict_Ytheta['Theta23']))+\
+    (dict_Ymag['y24']*v4*torch.cos(vang2-vang4-dict_Ytheta['Theta24']))),\
+    v3*((dict_Ymag['y31']*v1*torch.cos(vang3-vang1-dict_Ytheta['Theta31']))+\
+    (dict_Ymag['y32']*v2*torch.cos(vang3-vang2-dict_Ytheta['Theta32']))+\
+    (dict_Ymag['y33']*v3*torch.cos(vang3-vang3-dict_Ytheta['Theta33']))+\
+    (dict_Ymag['y34']*v4*torch.cos(vang3-vang4-dict_Ytheta['Theta34']))),\
+    v4*((dict_Ymag['y41']*v1*torch.cos(vang4-vang1-dict_Ytheta['Theta41']))+\
+    (dict_Ymag['y42']*v2*torch.cos(vang4-vang2-dict_Ytheta['Theta42']))+\
+    (dict_Ymag['y43']*v3*torch.cos(vang4-vang3-dict_Ytheta['Theta43']))+\
+    (dict_Ymag['y44']*v4*torch.cos(vang4-vang4-dict_Ytheta['Theta44']))),\
+    v2*((dict_Ymag['y21']*v1*torch.sin(vang2-vang1-dict_Ytheta['Theta21']))+\
+    (dict_Ymag['y22']*v2*torch.sin(vang2-vang2-dict_Ytheta['Theta22']))+\
+    (dict_Ymag['y23']*v3*torch.sin(vang2-vang3-dict_Ytheta['Theta23']))+\
+    (dict_Ymag['y24']*v4*torch.sin(vang2-vang4-dict_Ytheta['Theta24']))),\
+    v3*((dict_Ymag['y31']*v1*torch.sin(vang3-vang1-dict_Ytheta['Theta31']))+\
+    (dict_Ymag['y32']*v2*torch.sin(vang3-vang2-dict_Ytheta['Theta32']))+\
+    (dict_Ymag['y33']*v3*torch.sin(vang3-vang3-dict_Ytheta['Theta33']))+\
+    (dict_Ymag['y34']*v4*torch.sin(vang3-vang4-dict_Ytheta['Theta34']))),\
+    v4*((dict_Ymag['y41']*v1*torch.sin(vang4-vang1-dict_Ytheta['Theta41']))+\
+    (dict_Ymag['y42']*v2*torch.sin(vang4-vang2-dict_Ytheta['Theta42']))+\
+    (dict_Ymag['y43']*v3*torch.sin(vang4-vang3-dict_Ytheta['Theta43']))+\
+    (dict_Ymag['y44']*v4*torch.sin(vang4-vang4-dict_Ytheta['Theta44']))),\
+    )
+
+#initialize x and y terms of the algo. 
+#x terms represent voltage angles and voltages on each bus, and y terms are the real and reactive power components on each bus
+#x and y terms are for the non-slack buses
+y_old=np.array([[0.5],[-1],[0.3],[-0.2],[0.5],[-0.1]])
+x=np.array([[0],[0],[0],[1.00],[1],[1]])
+
+#initialize voltage vector for slack bus and start with a voltage guess of 1.0-0j on the 3 load all buses
+v_vec=np.array([[1.03+0j],[1.00-0.0j],[1.0-0.00j],[1.0-0.0j]])
+
+
+#Set the initial tolerance (reltol) as 1 and the termination criteria (stop_crit) as 10^-9, also limit maximum iterations to 400
+
+reltol=1
+stop_crit=0.000000001
+iter_cnt=0
+iter_max=200
+
+while (iter_cnt<iter_max) or (reltol>stop_crit): 
+    
+    #create bus voltage angle dictionary
+    v_vec_ang_dict={}
+    v_vec_ang_i=1
+    for i in v_vec:
+        key=str("vang"+str(v_vec_ang_i))
+        v_vec_ang_dict[key]=np.angle(i,deg=True)
+        v_vec_ang_i=v_vec_ang_i+1
+    
+    #create voltage magnitude dictionary
+    v_vec_mag_dict={}
+    v_vec_mag_i=1
+    for i in v_vec:
+        key=str("v"+str(v_vec_mag_i))
+        v_vec_mag_dict[key]=abs(i)
+        v_vec_mag_i=v_vec_mag_i+1
+        
+    #solve for current
+    curr_vec=np.matmul(Y_bus,v_vec)
+    #create bus current dictionary
+    I={}
+    I_i=1
+    for i in curr_vec:
+        key=str("I"+str(I_i))
+        I[key]=complex(i)
+        I_i=I_i+1
+    
+    #calculate complex power
+    s_cmplx=np.array([[(I['I1']*v_vec[0,0])],[(I['I2']*v_vec[1,0])],[(I['I3']*v_vec[2,0])],[(I['I4']*v_vec[3,0])]])
+    #calculate new y
+    y_new=np.array([[np.real(s_cmplx[1,0])],[np.real(s_cmplx[2,0])],[np.real(s_cmplx[3,0])],[np.imag(s_cmplx[1,0])],[np.imag(s_cmplx[2,0])],[np.imag(s_cmplx[3,0])]])
+    #obtain delta y
+    del_y=np.subtract(y_old,y_new)
+    #inspect for convergence
+    reltol_list=np.array([[del_y[0]/y_old[0]],[del_y[1]/y_old[1]],[del_y[2]/y_old[2]],[del_y[3]/y_old[3]],[del_y[4]/y_old[4]],[del_y[5]/y_old[5]]])   
+    reltol=max(abs(del_y))
+    
+    #check for convergence criteria
+    if reltol<stop_crit: 
+        break
+    elif iter_cnt==200:
+        break
+    else:
+        pass
+    
+    #assign y_new value to y_old 
+    y_old=y_new
+    #increase iteration count
+    iter_cnt=iter_cnt+1
+    #convert voltage mag and phase angle to tensors for jacobian calculation
+    v_vec_mag_dict_tsr=dict(zip(v_vec_mag_dict.keys(), [tensor(value) for value in v_vec_mag_dict.values()]))
+    v_vec_ang_dict_tsr=dict(zip(v_vec_ang_dict.keys(), [tensor(value) for value in v_vec_ang_dict.values()]))
+    #assign jacobian variables
+    v2, v3, v4, vang2, vang3, vang4 = v_vec_mag_dict_tsr['v2'], v_vec_mag_dict_tsr['v3'], v_vec_mag_dict_tsr['v4'],\
+    v_vec_ang_dict_tsr['vang2'], v_vec_ang_dict_tsr['vang3'], v_vec_ang_dict_tsr['vang4']
+    #compute jacobian
+    Jb=jacobian(f,(vang2, vang3, vang4, v2, v3, v4))
+    #reshape jacobian from tensor dimension to vector dimension
+    jb=np.reshape(np.array(Jb),(6,6))
+
+    #compute delta x
+    del_x=np.linalg.solve(jb, del_y)
+    #compute new x
+    x=del_x+x
+
+    #calculate new values for v4, v2, v3
+    v2_i=cmath.rect(x[3],math.radians(x[0]))
+    v3_i=cmath.rect(x[4],math.radians(x[1]))
+    v4_i=cmath.rect(x[5],math.radians(x[2])) 
+    #insert new  values into voltage vector
+    v_vec=v_vec.tolist()
+    v_vec[1]=[v2_i]
+    v_vec[2]=[v3_i]
+    v_vec[3]=[v4_i]
+    v_vec=np.array(v_vec)
+    
+#calculated voltage vectors
+v_dict_i=1
+v_dict={}
+for i in v_vec:
+    key=str("v_bus"+str(v_dict_i))
+    v_dict[key]=complex(i)
+    v_dict_i=v_dict_i+1
+
+print("Bus 1 voltage vector is",cmath.polar(v_dict['v_bus1']),". The angle is expressed in radians")
+print("Bus 2 voltage vector is",cmath.polar(v_dict['v_bus2']),". The angle is expressed in radians")
+print("Bus 3 voltage vector is",cmath.polar(v_dict['v_bus3']),". The angle is expressed in radians")
+print("Bus 4 voltage vector is",cmath.polar(v_dict['v_bus4']),". The angle is expressed in radians")
+print(" ")
+print(reltol,"is the maximum calculated error tolerance for the voltage vectors")
+print("Required ",iter_cnt," iterations to converge")
