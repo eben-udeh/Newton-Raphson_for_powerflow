@@ -121,7 +121,8 @@ while (iter_cnt<iter_max) or (reltol>stop_crit):
     s_cmplx=np.array([[(I['I1']*v_vec[0,0])],[(I['I2']*v_vec[1,0])],[(I['I3']*v_vec[2,0])],[(I['I4']*v_vec[3,0])]])
     #calculate new y
     y_new=np.array([[np.real(s_cmplx[1,0])],[np.real(s_cmplx[2,0])],[np.real(s_cmplx[3,0])],[np.imag(s_cmplx[1,0])],[np.imag(s_cmplx[2,0])],[np.imag(s_cmplx[3,0])]])
-    #obtain delta y
+    
+    #obtain delta y (Loss function)
     del_y=np.subtract(y_old,y_new)
     #inspect for convergence
     reltol_list=np.array([[del_y[0]/y_old[0]],[del_y[1]/y_old[1]],[del_y[2]/y_old[2]],[del_y[3]/y_old[3]],[del_y[4]/y_old[4]],[del_y[5]/y_old[5]]])   
