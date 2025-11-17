@@ -4,181 +4,169 @@
 #Electrical and Computer Engineering
 #written for python 3.7+
 
-import autograd.numpy as np
+import numpy as np
 import math
-import sys
 import cmath
 import torch
 from torch.autograd.functional import jacobian
-from torch import tensor
 
-#Initialize Y_bus admittance matrix
-Y_bus=np.array([[3-9j,-2+6j,-1+3j,0],[-2+6j, 3.666-11j, -0.666+2j, -1+3j],[-1+3j,-0.666+2j,\
- 3.666-11j,-2+6j],[0,-1+3j,-2+6j,3-9j]])
+# ------------------------------------------
+# System data: 4-bus Y-bus (balanced, single-phase equivalent)
+# ------------------------------------------
+Y_bus_np = np.array([
+    [ 3.0 - 9.0j,   -2.0 + 6.0j,   -1.0 + 3.0j,   0.0 + 0.0j ],
+    [-2.0 + 6.0j,   3.666 - 11.0j, -0.666 + 2.0j, -1.0 + 3.0j],
+    [-1.0 + 3.0j,  -0.666 + 2.0j,  3.666 - 11.0j, -2.0 + 6.0j],
+    [ 0.0 + 0.0j,   -1.0 + 3.0j,   -2.0 + 6.0j,   3.0 - 9.0j ]
+])
 
-#vangX and vX represent voltage angle and magnitude respectively in the differentiable cartesian equations
-#Y_mag_i and Ythetha_i represents magnitude and angle of the ith element of the admittance matrix
+# Convert to torch tensors (magnitudes and angles) for autograd use
+Y_mag = torch.tensor(np.abs(Y_bus_np), dtype=torch.float64)
+Y_theta = torch.tensor(np.angle(Y_bus_np), dtype=torch.float64)  # radians
 
-def f(vang2, vang3, vang4, v2, v3, v4): #defines differentiable cartesian function
-    
-    dict_Ymag={}
-    dict_Ytheta={}
-    Ymag_i = 1
-    Ytheta_i = 1
-    #assign y_bus magnitude variables
-    for i in Y_bus:
-        Ymag_j=1
-        for j in i:
-            key = str("y"+str(Ymag_i)+str(Ymag_j))
-            dict_Ymag[key] = abs(j)
-            Ymag_j=Ymag_j+1
-        Ymag_i=Ymag_i+1
-    #assign y_bus angular variables in radians
-    for i in Y_bus:
-        Ytheta_j=1
-        for j in i:
-            key = str("Theta"+str(Ytheta_i)+str(Ytheta_j))
-            dict_Ytheta[key] = np.angle(j)
-            Ytheta_j=Ytheta_j+1
-        Ytheta_i=Ytheta_i+1
-        
-    #return P and Q cartesian equations 
-    v1=1
-    vang1=0
+# Slack bus is bus 1 (index 0): |V1| = 1.0 pu, δ1 = 0 rad
+V1_mag = 1.0
+V1_ang = 0.0
 
-    return(v2*((dict_Ymag['y21']*v1*torch.cos(vang2-vang1-dict_Ytheta['Theta21']))+\
-    (dict_Ymag['y22']*v2*torch.cos(vang2-vang2-dict_Ytheta['Theta22']))+\
-    (dict_Ymag['y23']*v3*torch.cos(vang2-vang3-dict_Ytheta['Theta23']))+\
-    (dict_Ymag['y24']*v4*torch.cos(vang2-vang4-dict_Ytheta['Theta24']))),\
-    v3*((dict_Ymag['y31']*v1*torch.cos(vang3-vang1-dict_Ytheta['Theta31']))+\
-    (dict_Ymag['y32']*v2*torch.cos(vang3-vang2-dict_Ytheta['Theta32']))+\
-    (dict_Ymag['y33']*v3*torch.cos(vang3-vang3-dict_Ytheta['Theta33']))+\
-    (dict_Ymag['y34']*v4*torch.cos(vang3-vang4-dict_Ytheta['Theta34']))),\
-    v4*((dict_Ymag['y41']*v1*torch.cos(vang4-vang1-dict_Ytheta['Theta41']))+\
-    (dict_Ymag['y42']*v2*torch.cos(vang4-vang2-dict_Ytheta['Theta42']))+\
-    (dict_Ymag['y43']*v3*torch.cos(vang4-vang3-dict_Ytheta['Theta43']))+\
-    (dict_Ymag['y44']*v4*torch.cos(vang4-vang4-dict_Ytheta['Theta44']))),\
-    v2*((dict_Ymag['y21']*v1*torch.sin(vang2-vang1-dict_Ytheta['Theta21']))+\
-    (dict_Ymag['y22']*v2*torch.sin(vang2-vang2-dict_Ytheta['Theta22']))+\
-    (dict_Ymag['y23']*v3*torch.sin(vang2-vang3-dict_Ytheta['Theta23']))+\
-    (dict_Ymag['y24']*v4*torch.sin(vang2-vang4-dict_Ytheta['Theta24']))),\
-    v3*((dict_Ymag['y31']*v1*torch.sin(vang3-vang1-dict_Ytheta['Theta31']))+\
-    (dict_Ymag['y32']*v2*torch.sin(vang3-vang2-dict_Ytheta['Theta32']))+\
-    (dict_Ymag['y33']*v3*torch.sin(vang3-vang3-dict_Ytheta['Theta33']))+\
-    (dict_Ymag['y34']*v4*torch.sin(vang3-vang4-dict_Ytheta['Theta34']))),\
-    v4*((dict_Ymag['y41']*v1*torch.sin(vang4-vang1-dict_Ytheta['Theta41']))+\
-    (dict_Ymag['y42']*v2*torch.sin(vang4-vang2-dict_Ytheta['Theta42']))+\
-    (dict_Ymag['y43']*v3*torch.sin(vang4-vang3-dict_Ytheta['Theta43']))+\
-    (dict_Ymag['y44']*v4*torch.sin(vang4-vang4-dict_Ytheta['Theta44']))),\
-    )
+# ------------------------------------------
+# Specified net power injections at buses 2–4 (P and Q)
+# Convention: positive = net generation, negative = net load
+# S_spec = [P2, P3, P4, Q2, Q3, Q4]
+# ------------------------------------------
+S_spec_np = np.array([
+    [ 0.5],   # P2
+    [-1.0],   # P3
+    [ 0.3],   # P4
+    [-0.2],   # Q2
+    [ 0.5],   # Q3
+    [-0.1]    # Q4
+], dtype=float)
 
-#initialize x and y terms of the algo. 
-#x terms represent voltage angles and voltages on each bus, and y terms are the real and reactive power components on each bus
-#x and y terms are for the non-slack buses
-y_old=np.array([[0.5],[-1],[0.3],[-0.2],[0.5],[-0.1]])
-x=np.array([[0],[0],[0],[1.00],[1],[1]])
+S_spec = torch.tensor(S_spec_np.flatten(), dtype=torch.float64)  # shape (6,)
 
-#initialize voltage vector for slack bus and start with a voltage guess of 1.0-0j on the 3 load all buses
-v_vec=np.array([[1.03+0j],[1.00-0.0j],[1.0-0.00j],[1.0-0.0j]])
+# ------------------------------------------
+# Power injection calculation using polar voltages
+# Input:
+#   x[0:3] = angles at buses 2–4 (radians)
+#   x[3:6] = magnitudes at buses 2–4
+# Output:
+#   torch.tensor([P2,P3,P4,Q2,Q3,Q4])
+# ------------------------------------------
+def power_injections(x: torch.Tensor) -> torch.Tensor:
+    """
+    Compute real and reactive power injections at buses 2–4
+    given state vector x = [δ2, δ3, δ4, |V2|, |V3|, |V4|].
+    """
+    # Full system angles and magnitudes (4 buses)
+    ang = torch.zeros(4, dtype=torch.float64)
+    vmag = torch.zeros(4, dtype=torch.float64)
+
+    # Slack bus (bus 1)
+    ang[0] = V1_ang
+    vmag[0] = V1_mag
+
+    # PQ buses: buses 2–4 (global indices 1,2,3)
+    ang[1:4] = x[0:3]      # δ2, δ3, δ4 in radians
+    vmag[1:4] = x[3:6]     # |V2|, |V3|, |V4|
+
+    P = torch.zeros(4, dtype=torch.float64)
+    Q = torch.zeros(4, dtype=torch.float64)
+
+    # Standard polar-form power equations
+    for i in range(4):
+        for j in range(4):
+            P[i] += vmag[i] * vmag[j] * Y_mag[i, j] * torch.cos(ang[i] - ang[j] - Y_theta[i, j])
+            Q[i] += vmag[i] * vmag[j] * Y_mag[i, j] * torch.sin(ang[i] - ang[j] - Y_theta[i, j])
+
+    # Return injections at buses 2–4 only (indices 1,2,3)
+    return torch.stack([P[1], P[2], P[3], Q[1], Q[2], Q[3]])  # shape (6,)
 
 
-#Set the initial tolerance (reltol) as 1 and the termination criteria (stop_crit) as 10^-9, also limit maximum iterations to 400
+# ------------------------------------------
+# Newton–Raphson solver
+# ------------------------------------------
+def newton_raphson_power_flow(
+    max_iter: int = 50,
+    tol: float = 1e-10
+):
+    # Initial voltage guess in rectangular form (you can tweak this)
+    v_init = np.array([
+        1.03 + 0.0j,  # Bus 1 (slack) magnitude 1.03, angle 0
+        1.00 + 0.0j,  # Bus 2
+        1.00 + 0.0j,  # Bus 3
+        1.00 + 0.0j   # Bus 4
+    ], dtype=complex)
 
-reltol=1
-stop_crit=0.000000001
-iter_cnt=0
-iter_max=200
+    # Build initial state vector x = [δ2, δ3, δ4, |V2|, |V3|, |V4|]
+    ang_init = np.angle(v_init)          # radians
+    mag_init = np.abs(v_init)
 
-while (iter_cnt<iter_max) or (reltol>stop_crit): 
-    
-    #create bus voltage angle dictionary
-    v_vec_ang_dict={}
-    v_vec_ang_i=1
-    for i in v_vec:
-        key=str("vang"+str(v_vec_ang_i))
-        v_vec_ang_dict[key]=np.angle(i,deg=True)
-        v_vec_ang_i=v_vec_ang_i+1
-    
-    #create voltage magnitude dictionary
-    v_vec_mag_dict={}
-    v_vec_mag_i=1
-    for i in v_vec:
-        key=str("v"+str(v_vec_mag_i))
-        v_vec_mag_dict[key]=abs(i)
-        v_vec_mag_i=v_vec_mag_i+1
-        
-    #solve for current
-    curr_vec=np.matmul(Y_bus,v_vec)
-    #create bus current dictionary
-    I={}
-    I_i=1
-    for i in curr_vec:
-        key=str("I"+str(I_i))
-        I[key]=complex(i)
-        I_i=I_i+1
-    
-    #calculate complex power
-    s_cmplx=np.array([[(I['I1']*v_vec[0,0])],[(I['I2']*v_vec[1,0])],[(I['I3']*v_vec[2,0])],[(I['I4']*v_vec[3,0])]])
-    #calculate new y
-    y_new=np.array([[np.real(s_cmplx[1,0])],[np.real(s_cmplx[2,0])],[np.real(s_cmplx[3,0])],[np.imag(s_cmplx[1,0])],[np.imag(s_cmplx[2,0])],[np.imag(s_cmplx[3,0])]])
-    
-    #obtain delta y (Loss function)
-    del_y=np.subtract(y_old,y_new)
-    #inspect for convergence
-    reltol_list=np.array([[del_y[0]/y_old[0]],[del_y[1]/y_old[1]],[del_y[2]/y_old[2]],[del_y[3]/y_old[3]],[del_y[4]/y_old[4]],[del_y[5]/y_old[5]]])   
-    reltol=max(abs(del_y))
-    
-    #check for convergence criteria
-    if reltol<stop_crit: 
-        break
-    elif iter_cnt==200:
-        break
+    x_np = np.array([
+        ang_init[1],  # δ2
+        ang_init[2],  # δ3
+        ang_init[3],  # δ4
+        mag_init[1],  # |V2|
+        mag_init[2],  # |V3|
+        mag_init[3]   # |V4|
+    ], dtype=float)
+
+    x = torch.tensor(x_np, dtype=torch.float64)
+
+    for it in range(max_iter):
+        # Enable gradients on x for this iteration
+        x = x.detach().requires_grad_(True)
+
+        # Compute calculated injections
+        S_calc = power_injections(x)  # shape (6,)
+
+        # Mismatch: spec - calc
+        mismatch = S_spec - S_calc     # shape (6,)
+        max_mis = mismatch.abs().max().item()
+
+        print(f"Iteration {it+1}: max mismatch = {max_mis:.3e}")
+
+        # Convergence check
+        if max_mis < tol:
+            print("Converged!")
+            x = x.detach()
+            break
+
+        # Jacobian: dS_calc/dx
+        J = jacobian(power_injections, x)  # shape (6,6)
+
+        # Solve J * Δx = (S_spec - S_calc) = mismatch
+        delta_x = torch.linalg.solve(J, mismatch)
+
+        # Update state
+        x = (x + delta_x).detach()
+
     else:
-        pass
-    
-    #assign y_new value to y_old 
-    y_old=y_new
-    #increase iteration count
-    iter_cnt=iter_cnt+1
-    #convert voltage mag and phase angle to tensors for jacobian calculation
-    v_vec_mag_dict_tsr=dict(zip(v_vec_mag_dict.keys(), [tensor(value) for value in v_vec_mag_dict.values()]))
-    v_vec_ang_dict_tsr=dict(zip(v_vec_ang_dict.keys(), [tensor(value) for value in v_vec_ang_dict.values()]))
-    #assign jacobian variables
-    v2, v3, v4, vang2, vang3, vang4 = v_vec_mag_dict_tsr['v2'], v_vec_mag_dict_tsr['v3'], v_vec_mag_dict_tsr['v4'],\
-    v_vec_ang_dict_tsr['vang2'], v_vec_ang_dict_tsr['vang3'], v_vec_ang_dict_tsr['vang4']
-    #compute jacobian
-    Jb=jacobian(f,(vang2, vang3, vang4, v2, v3, v4))
-    #reshape jacobian from tensor dimension to vector dimension
-    jb=np.reshape(np.array(Jb),(6,6))
+        print("WARNING: NR did not converge within max_iter")
 
-    #compute delta x
-    del_x=np.linalg.solve(jb, del_y)
-    #compute new x
-    x=del_x+x
+    # Build final bus voltages from state vector x
+    ang_final = np.zeros(4, dtype=float)
+    mag_final = np.zeros(4, dtype=float)
 
-    #calculate new values for v4, v2, v3
-    v2_i=cmath.rect(x[3],math.radians(x[0]))
-    v3_i=cmath.rect(x[4],math.radians(x[1]))
-    v4_i=cmath.rect(x[5],math.radians(x[2])) 
-    #insert new  values into voltage vector
-    v_vec=v_vec.tolist()
-    v_vec[1]=[v2_i]
-    v_vec[2]=[v3_i]
-    v_vec[3]=[v4_i]
-    v_vec=np.array(v_vec)
-    
-#calculated voltage vectors
-v_dict_i=1
-v_dict={}
-for i in v_vec:
-    key=str("v_bus"+str(v_dict_i))
-    v_dict[key]=complex(i)
-    v_dict_i=v_dict_i+1
+    ang_final[0] = V1_ang
+    mag_final[0] = V1_mag
+    ang_final[1:4] = x[0:3].numpy()
+    mag_final[1:4] = x[3:6].numpy()
 
-print("Bus 1 voltage vector is",cmath.polar(v_dict['v_bus1']),". The angle is expressed in radians")
-print("Bus 2 voltage vector is",cmath.polar(v_dict['v_bus2']),". The angle is expressed in radians")
-print("Bus 3 voltage vector is",cmath.polar(v_dict['v_bus3']),". The angle is expressed in radians")
-print("Bus 4 voltage vector is",cmath.polar(v_dict['v_bus4']),". The angle is expressed in radians")
-print(" ")
-print(reltol,"is the maximum calculated error tolerance for the voltage vectors")
-print("Required ",iter_cnt," iterations to converge")
+    V_final = np.zeros(4, dtype=complex)
+    for i in range(4):
+        V_final[i] = cmath.rect(mag_final[i], ang_final[i])  # rect(r, phi) with phi in radians
+
+    # Print results in polar form
+    print("\nFinal bus voltages:")
+    for i in range(4):
+        mag = abs(V_final[i])
+        ang_deg = math.degrees(cmath.phase(V_final[i]))
+        print(f"  Bus {i+1}: |V| = {mag:.6f} pu, angle = {ang_deg:.6f} deg")
+
+    # Also return raw data if you want to use it elsewhere
+    return V_final, mag_final, ang_final, x
+
+
+if __name__ == "__main__":
+    V_final, mag_final, ang_final, x_state = newton_raphson_power_flow()
+
